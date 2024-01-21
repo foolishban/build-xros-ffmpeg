@@ -1,6 +1,28 @@
 LIBAVFORMAT_MAJOR {
     global:
         av*;
+        ff_inet_aton;
+        ff_socket_nonblock;
+        ff_rtsp_parse_line;
+        ff_rtp_get_local_rtp_port;
+        ff_rtp_get_local_rtcp_port;
+        ffio_open_dyn_packet_buf;
+        ffio_set_buf_size;
+        ffurl_close;
+        ffurl_closep;
+        ffurl_open;
+        ffurl_write;
+        ff_check_interrupt;
+        ffurl_seek;
+        ffurl_read;
+        ffurl_open_whitelist;
+        ff_alloc_extradata;
+        ffurl_size;
+        url_feof;
+        ijk*;
+        ff_isom_write_vpcc;
+        ff_isom_*;
+        ffurl_context_class;
     local:
         *;
 };

@@ -234,6 +234,11 @@ void av_dict_free(AVDictionary **m);
 int av_dict_get_string(const AVDictionary *m, char **buffer,
                        const char key_val_sep, const char pairs_sep);
 
+int av_dict_set_intptr(AVDictionary **pm, const char *key, uintptr_t value, int flags);
+uintptr_t av_dict_get_intptr(const AVDictionary *m, const char* key);
+uintptr_t av_dict_strtoptr(char * value);
+char * av_dict_ptrtostr(uintptr_t value);
+
 /**
  * @}
  */
