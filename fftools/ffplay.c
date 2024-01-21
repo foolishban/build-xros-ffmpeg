@@ -400,7 +400,10 @@ static int opt_add_vfilter(void *optctx, const char *opt, const char *arg)
     if (ret < 0)
         return ret;
 
-    vfilters_list[nb_vfilters - 1] = arg;
+    vfilters_list[nb_vfilters - 1] = av_strdup(arg);
+    if (!vfilters_list[nb_vfilters - 1])
+        return AVERROR(ENOMEM);
+
     return 0;
 }
 
@@ -1305,7 +1308,13 @@ static void do_exit(VideoState *is)
     if (window)
         SDL_DestroyWindow(window);
     uninit_opts();
+    for (int i = 0; i < nb_vfilters; i++)
+        av_freep(&vfilters_list[i]);
     av_freep(&vfilters_list);
+    av_freep(&video_codec_name);
+    av_freep(&audio_codec_name);
+    av_freep(&subtitle_codec_name);
+    av_freep(&input_filename);
     avformat_network_deinit();
     if (show_status)
         printf("\n");
@@ -1858,6 +1867,10 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
     const AVDictionaryEntry *e = NULL;
     int nb_pix_fmts = 0;
     int i, j;
+    AVBufferSrcParameters *par = av_buffersrc_parameters_alloc();
+
+    if (!par)
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < renderer_info.num_texture_formats; i++) {
         for (j = 0; j < FF_ARRAY_ELEMS(sdl_texture_format_map) - 1; j++) {
@@ -1892,6 +1905,10 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
                                             avfilter_get_by_name("buffer"),
                                             "ffplay_buffer", buffersrc_args, NULL,
                                             graph)) < 0)
+        goto fail;
+    par->hw_frames_ctx = frame->hw_frames_ctx;
+    ret = av_buffersrc_parameters_set(filt_src, par);
+    if (ret < 0)
         goto fail;
 
     ret = avfilter_graph_create_filter(&filt_out,
@@ -1930,11 +1947,11 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
         if (sd)
             displaymatrix = (int32_t *)sd->data;
         if (!displaymatrix) {
-            const AVPacketSideData *sd = av_packet_side_data_get(is->video_st->codecpar->coded_side_data,
-                                                                 is->video_st->codecpar->nb_coded_side_data,
-                                                                 AV_PKT_DATA_DISPLAYMATRIX);
-            if (sd)
-                displaymatrix = (int32_t *)sd->data;
+            const AVPacketSideData *psd = av_packet_side_data_get(is->video_st->codecpar->coded_side_data,
+                                                                  is->video_st->codecpar->nb_coded_side_data,
+                                                                  AV_PKT_DATA_DISPLAYMATRIX);
+            if (psd)
+                displaymatrix = (int32_t *)psd->data;
         }
         theta = get_rotation(displaymatrix);
 
@@ -1959,6 +1976,7 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
     is->out_video_filter = filt_out;
 
 fail:
+    av_freep(&par);
     return ret;
 }
 
@@ -3586,7 +3604,9 @@ static int opt_input_file(void *optctx, const char *filename)
     }
     if (!strcmp(filename, "-"))
         filename = "fd:";
-    input_filename = filename;
+    input_filename = av_strdup(filename);
+    if (!input_filename)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -3594,6 +3614,7 @@ static int opt_input_file(void *optctx, const char *filename)
 static int opt_codec(void *optctx, const char *opt, const char *arg)
 {
    const char *spec = strchr(opt, ':');
+   const char **name;
    if (!spec) {
        av_log(NULL, AV_LOG_ERROR,
               "No media specifier was specified in '%s' in option '%s'\n",
@@ -3601,16 +3622,20 @@ static int opt_codec(void *optctx, const char *opt, const char *arg)
        return AVERROR(EINVAL);
    }
    spec++;
+
    switch (spec[0]) {
-   case 'a' :    audio_codec_name = arg; break;
-   case 's' : subtitle_codec_name = arg; break;
-   case 'v' :    video_codec_name = arg; break;
+   case 'a' : name = &audio_codec_name;    break;
+   case 's' : name = &subtitle_codec_name; break;
+   case 'v' : name = &video_codec_name;    break;
    default:
        av_log(NULL, AV_LOG_ERROR,
               "Invalid media specifier '%s' in option '%s'\n", spec, opt);
        return AVERROR(EINVAL);
    }
-   return 0;
+
+   av_freep(name);
+   *name = av_strdup(arg);
+   return *name ? 0 : AVERROR(ENOMEM);
 }
 
 static int dummy;
@@ -3680,8 +3705,8 @@ void show_help_default(const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     show_usage();
-    show_help_options(options, "Main options:", 0, OPT_EXPERT, 0);
-    show_help_options(options, "Advanced options:", OPT_EXPERT, 0, 0);
+    show_help_options(options, "Main options:", 0, OPT_EXPERT);
+    show_help_options(options, "Advanced options:", OPT_EXPERT, 0);
     printf("\n");
     show_help_children(avcodec_get_class(), AV_OPT_FLAG_DECODING_PARAM);
     show_help_children(avformat_get_class(), AV_OPT_FLAG_DECODING_PARAM);
